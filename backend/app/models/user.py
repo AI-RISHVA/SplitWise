@@ -1,10 +1,15 @@
-from sqlmodel import SQLModel , Field
-class User(SQLModel,table = True):
-    id : int |None = Field(default=None,primary_key=True)
-    firstname : str = Field(index=True)
-    lastname : str = Field(index=True)
-    username : str = Field(index=True,unique=True)
-    gender : str
-    mobile_no : str = Field(min_length=10,max_length=10)    
-    email : str = Field(unique=True, nullable=False, index=True)
-    password : str = Field( nullable=False)
+
+from app.db.data import Base
+from sqlalchemy import Column,Integer,String
+
+
+class User(Base):
+    __tablename__ ="User"
+    id = Column(Integer,primary_key=True, index=True)
+    firstname = Column(String,index=True)
+    lastname = Column(String,index=True)
+    username = Column(String,index=True,unique=True)
+    gender =Column(String)
+    mobile_no =Column(String(10))    
+    email =Column(String,unique=True, nullable=False, index=True)
+    password =Column(String, nullable=False)

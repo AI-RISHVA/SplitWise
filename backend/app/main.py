@@ -4,13 +4,13 @@ from app.api import groups as groups_routes
 from app.api import expenses as expenses_routes
 
 
-from app.db import session
+from app.db import data
 from contextlib import asynccontextmanager
 
 
 @asynccontextmanager 
 async def lifespan_manager(app:FastAPI): #lifespan ma lakhelo code only 1 time run thay avo hoy, jya e server start thy k stop thy 
-    session.create_db_and_table()
+    data.create_db_and_table()
     yield 
 
 app = FastAPI(title="This is Splitwise", lifespan=lifespan_manager)

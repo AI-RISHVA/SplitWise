@@ -1,19 +1,20 @@
-from sqlmodel import SQLModel , Field, Column, JSON 
-from typing import List , Dict
-from datetime import datetime
 
-class Expense(SQLModel,table = True):
-    id : int |None = Field(default=None,primary_key=True)
-    group_id : int |None = Field(default=None , foreign_key="group.id")
-    group_name : str = Field(index=True)    
-    paid_by_id: int | None = Field(default=None, foreign_key="user.id")
-    amount : float
-    paid_by_name: str = Field(default=None, index=True)
-    split_method : str 
-    shared_by:List[str] = Field(default=[], sa_column=Column(JSON))
-    split_details: Dict[str, float] | None = Field(default=None, sa_column=Column(JSON))
-    description : str |None = Field(default=None)
-    date: datetime = Field(default_factory=datetime.now)
+from datetime import datetime,timezone
+
+from app.db.data import Base
+from sqlalchemy import Column,Integer,String,JSON,DateTime,ForeignKey,Float
 
 
-       
+class Expense(Base):
+    __tablename__ ="Expense"
+    id  = Column(Integer,primary_key=True,index=True)
+    group_id = Column(Integer, ForeignKey("Group.id"),index=True)
+    group_name = Column(String,index=True)
+    paid_by_id  = Column(Integer,  ForeignKey("User.id"),index=True)
+    amount =Column(Float,nullable=False, default=0.0)
+    paid_by_name = Column(String,default=None,index=True)
+    split_method = Column(String)
+    shared_by = Column(JSON, default=list)
+    split_details= Column(JSON, nullable=True, default=None)
+    description =Column(String,default=None)
+    date = Column(DateTime, default=lambda: datetime.now(timezone.utc))
