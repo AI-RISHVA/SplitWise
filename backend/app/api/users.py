@@ -1,82 +1,38 @@
-from fastapi import APIRouter ,FastAPI,Depends, HTTPException,status
+from fastapi import APIRouter ,Depends, HTTPException,status
 from app.db.data import get_session
 from app.schemas.users import UserOut,UserIn
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from typing import List
 
+# database error handling import
+from sqlalchemy.exc import IntegrityError
+
+
 # table import
-from app.models.expense import Expense  
-from app.models.group import Group
+
 from app.models.user import User
+from app.models.group import Group
+
 
 
 # security imports
-app = FastAPI()
-from jose import jwt 
-from fastapi.security import OAuth2PasswordBearer,OAuth2PasswordRequestForm
-from datetime import datetime,timedelta,timezone
-from passlib.context import CryptContext
+from app.api.auth import hash_password, verifypass, create_token, verify_token
+from fastapi.security import OAuth2PasswordRequestForm
 
 
-# database error handling import
-from sqlalchemy.exc import IntegrityError
 
 
 router = APIRouter()
  ### app.inculde_router(user_routes) #a line main file ma lakhvi jethi a file na endpoints tya jova malse
 
-# 1 congiguration
-SECRET_KEY = "rishvasecret"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 
-# 2.PASSWORD HAHING SETUP
-pwd_context = CryptContext(schemes =["bcrypt"],deprecated ="auto")
-# hash password
-def hash_password(password:str):
-    return pwd_context.hash(password)
 
-# verify password
-def verifypass(plain_password,hash_password):
-    return pwd_context.verify(plain_password,hash_password)
-
-
-# 3.creare token
-def create_token(data: dict):
-    to_encode = data.copy() # Original data ki duplicate copy banayi
-    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES) # 30 min baad ka time nikala
-    to_encode.update({"exp": expire}) # Data ke andar 'exp' naam se expiry time jod diya
-    
-    token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM) # Data + Chabi + Formula milakar token banaya
-    return token
-
-# 4.token varification
-
-#OAuthsetup
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl = "login")
-
-
-def verify_token(token: str = Depends(oauth2_scheme)):
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms={ALGORITHM})
-        username: str = payload.get("sub") #basic identity(jaise user ka email ya username, jise standard terms mein "sub" kehte hain
-        if username is None:
-            raise HTTPException(
-                status_code=401, 
-                detail="Invalid token"
-            )
-        return username
-    except jwt.JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, 
-            detail="Invalid or expired token"
-        )   
 
 # login api (token genrate with oauth2)
 
-@app.post("/login")
+@router.post("/login")
 def login(form_data :OAuth2PasswordRequestForm=Depends(),db: Session = Depends(get_session)
 ):
     user = db.execute(select(User).where(User.username == form_data.username)).scalars().first() 
@@ -89,7 +45,7 @@ def login(form_data :OAuth2PasswordRequestForm=Depends(),db: Session = Depends(g
     access_token = create_token({"sub":form_data.username})
 
     return {
-        "access_token " :access_token,
+        "access_token" :access_token,
         "token_type":"bearer"
     }
 
@@ -97,6 +53,20 @@ def login(form_data :OAuth2PasswordRequestForm=Depends(),db: Session = Depends(g
 
 @router.post("/register",response_model=UserOut)
 async def user_register(signin:UserIn,db: Session = Depends(get_session)):
+
+    statement = select(User).where(User.mobile_no == signin.mobile_no)
+    existing_user = db.execute(statement).scalars().first()
+
+    
+    if existing_user:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Mobile number is already registered"
+        )
+
+
+    
+
     try:
         db_user = User(
             firstname =signin.firstname,
@@ -115,6 +85,8 @@ async def user_register(signin:UserIn,db: Session = Depends(get_session)):
         db.refresh(db_user)  #data ne refresh kare jethi koi id bani hoy to db ma store thay
     
         return db_user
+
+    
     except IntegrityError as e:
         db.rollback() # if koi error avse to db rollback kare(atle ke "undo" kare)
         error_msg = str(e.orig)
@@ -132,10 +104,41 @@ async def user_register(signin:UserIn,db: Session = Depends(get_session)):
             detail=detail_msg
         )
     
+@router.delete("/delete_account/")
+def delete_user_account(
+    db: Session = Depends(get_session),
+    username: str = Depends(verify_token) ):
+
+    user_statement = select(User).where(User.username == username)
+    db_user = db.execute(user_statement).scalars().first()
+
+    if not db_user:
+        return {'error': "User not found"}
+
+    all_groups_statement = select(Group)
+    all_groups = db.execute(all_groups_statement).scalars().all()
+
+    for group in all_groups:
+        if username in group.groupmember:
+
+            updated_members = list(group.groupmember)
+            updated_members.remove(username)
+            
+            group.groupmember = updated_members
+            db.add(group) 
+
+    db.delete(db_user)
+    
+    db.commit()
+
+    return {
+        "status": "Success",
+        "msg": f"User '{username}' has been deleted, and automatically removed from all groups."
+    }
 
 
 @router.get("/register_view", response_model=List[UserOut])
-async def user_view(db: Session = Depends(get_session)):
+async def user_view(db: Session = Depends(get_session),username: str = Depends(verify_token)):
     users = db.execute(select(User)).scalars().all()
     return users
     
