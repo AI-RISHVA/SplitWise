@@ -1,5 +1,4 @@
-
-
+  
 from app.db.data import Base
 from sqlalchemy import Column,Integer,String,JSON
 

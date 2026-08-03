@@ -1,7 +1,7 @@
 
 from app.db.data import Base
 from sqlalchemy import Column,Integer,String
-
+from sqlalchemy.orm import relationship
 
 class User(Base):
     __tablename__ ="User"
@@ -13,3 +13,4 @@ class User(Base):
     mobile_no =Column(String(10))    
     email =Column(String,unique=True, nullable=False, index=True)
     password =Column(String, nullable=False)
+
