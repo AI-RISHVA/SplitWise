@@ -1,13 +1,20 @@
 from pydantic import BaseModel ,EmailStr ,Field ,field_validator
-from typing import Literal
+from typing import Literal,Optional
 import re
+import enum
+
+
+class GenderEnum(str, enum.Enum):
+    Male = "Male"
+    Female = "Female"
+    Other= "other"
 
 class UserIn(BaseModel):
     
     firstname : str 
     lastname : str 
     username : str 
-    gender: Literal['Male', 'Female', 'other'] 
+    gender: GenderEnum 
     mobile_no : str = Field(min_length=10,max_length=10,pattern=r'^\d{10}$')
     email : EmailStr
     password : str = Field(pattern =re.compile(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,15}$'))
@@ -50,3 +57,38 @@ class UserOut(BaseModel):
     gender: Literal['Male', 'Female', 'other'] 
     email: EmailStr
 
+
+class ProfileUpdate(BaseModel):
+    firstname: Optional[str] = None
+    lastname: Optional[str] = None
+    gender: Optional[Literal['Male', 'Female', 'other']] = None
+    email: Optional[EmailStr] = None
+
+class PasswordChange(BaseModel):
+    old_password: str
+    new_password: str = Field(pattern =re.compile(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,15}$'))
+    confirm_password : str
+
+
+# # -------------------------------------PASSWORD RESET
+
+# class ForgotPasswordRequest(BaseModel):
+#     email: EmailStr
+
+# class ResetPasswordVerify(BaseModel):
+#     email: EmailStr
+#     otp: str
+#     new_password: str = Field(pattern=r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,15}$')
+
+# # ----------------------login through fb or google
+
+# class SocialLoginRequest(BaseModel):
+#     provider: str # google k facebook 
+#     token: str    # External OAuth authorization token string
+#     email: EmailStr
+#     firstname: str
+#     lastname: str
+
+# # for Manual verification trigger email 
+# class VerificationResendRequest(BaseModel):
+#     email: EmailStr
