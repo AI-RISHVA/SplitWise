@@ -6,13 +6,18 @@ from fastapi import Body,APIRouter , Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from datetime import datetime,timedelta,timezone
 from passlib.context import CryptContext
+from app.schemas.refreshtoken import RefreshTokenInput
 
-
+from sqlalchemy.orm import Session
+from sqlalchemy import select
+from app.db.data import get_session
+from app.models.token_blacklist import BlacklistedToken
+router = APIRouter()
 
 # 1 congiguration
 SECRET_KEY = "rishvasecret"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 58
 
 
 # 2.PASSWORD HAHING SETUP
@@ -35,12 +40,12 @@ def create_token(data: dict , expires_delta: timedelta = None, is_refresh: bool 
     to_encode = data.copy() # Original data ki duplicate copy banayi
 
     if expires_delta:
-            expire = datetime.now(timezone.utc) + expires_delta
+        expire = datetime.now(timezone.utc) + expires_delta
     else:
-        # Agar refresh token hai toh 7 din, nahi toh access token ke liye 15 mins
-        expire = datetime.now(timezone.utc) + (timedelta(days=7) if is_refresh else timedelta(minutes=15))
+        # 10 minute for access token, 7 days for refresh token
+        expire = datetime.now(timezone.utc) + (timedelta(days=7) if is_refresh else timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
 
-    to_encode.update({"exp": expire , "type": "refresh" if is_refresh else "access"}) # Data ke andar 'exp' naam se expiry time jod diya
+    to_encode.update({"exp": expire, "type": "refresh" if is_refresh else "access"})
     
     token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM) # Data + Chabi + Formula milakar token banaya
     return token
@@ -50,10 +55,15 @@ def create_token(data: dict , expires_delta: timedelta = None, is_refresh: bool 
 # 4.token varification
 
 #OAuthsetup
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl = "login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
+def verify_token(token: str = Depends(oauth2_scheme), db: Session = Depends(get_session)):
 
-def verify_token(token: str = Depends(oauth2_scheme)):
+    
+    blacklisted = db.execute(select(BlacklistedToken).where(BlacklistedToken.token == token)).scalars().first()
+    if blacklisted:
+        raise HTTPException(status_code=401, detail="Token has been logged out. Please login again.")
+
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub") #basic identity(jaise user ka email ya username, jise standard terms mein "sub" kehte hain
@@ -72,26 +82,26 @@ def verify_token(token: str = Depends(oauth2_scheme)):
 
 
 
-router = APIRouter()
+
 @router.post("/refresh")
-def refresh_access_token(refresh_token: str = Body(..., embed=True)):
+def refresh_access_token(data: RefreshTokenInput):
+    refresh_token = data.refresh_token
     try:
-        #  Refresh token ko decode aur verify karein
+        #  Refresh token ne decode aurand verify 
         payload = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
         token_type: str = payload.get("type")
         
-        #  Check karein ki bheja gaya token sach me 'refresh' token hi hai ya nahi
         if token_type != "refresh" or username is None:
             raise HTTPException(status_code=401, detail="Invalid refresh token")
             
     except jwt.JWTError:
         raise HTTPException(status_code=401, detail="Refresh token has expired or is invalid")
 
-    # Agar token sahi hai, toh ek NAYA Access Token generate karke de dein
+    # jo token sachu hoy to refresh token create kari de
     new_access_token = create_token({"sub": username}, is_refresh=False)
     
     return {
-        "access_token": new_access_token,
-        "token_type": "bearer"
+        "access_token":new_access_token,
+        "token_type":"bearer"
     }
