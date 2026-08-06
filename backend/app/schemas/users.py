@@ -5,8 +5,8 @@ import enum
 
 
 class GenderEnum(str, enum.Enum):
-    Male = "Male"
-    Female = "Female"
+    Male = "male"
+    Female = "female"
     Other= "other"
 
 class UserIn(BaseModel):
@@ -23,10 +23,10 @@ class UserIn(BaseModel):
     @field_validator('email')
     @classmethod
     def email_validator(cls,value):
-        valid_domain=['gmail.com','outlook.com','yahoo.com']
+        valid_domain=['test.com','example.com','temp.com']
         
         domain_name=value.split('@')[-1]
-        if domain_name not in valid_domain:
+        if domain_name in valid_domain:
             raise ValueError('not a valid email domain')
         return value
 
@@ -37,13 +37,20 @@ class UserIn(BaseModel):
         if len(value) <3:
             raise ValueError('First name must be at least 3 characters')
         return value
+    
+    @field_validator('lastname')
+    @classmethod
+    def lastname_validator(cls,value):
+        if len(value) <3:
+            raise ValueError('Last name must be at least 3 characters')
+        return value
 
 
     @field_validator('username')
     @classmethod
     def username_validator(cls,value):
         if len(value) <5:
-            raise ValueError('First name must be at least 5 characters')
+            raise ValueError('Username must be at least 5 characters')
         for i in value:
             if not(i.isupper()or i.isdigit()):
                 raise ValueError('Username must contain only CAPITAL letters and numbers')
@@ -54,41 +61,23 @@ class UserOut(BaseModel):
     firstname : str 
     lastname : str
     username: str
-    gender: Literal['Male', 'Female', 'other'] 
+    gender: Literal['male', 'female', 'other'] 
     email: EmailStr
 
 
 class ProfileUpdate(BaseModel):
+    username: Optional[str] = None
     firstname: Optional[str] = None
     lastname: Optional[str] = None
-    gender: Optional[Literal['Male', 'Female', 'other']] = None
+    gender: Optional[Literal['male', 'female', 'other']] = None
     email: Optional[EmailStr] = None
+    mobile_no: Optional[str] = Field(default=None, min_length=10, max_length=10, pattern=r'^\d{10}$')
+    
+
+
 
 class PasswordChange(BaseModel):
     old_password: str
     new_password: str = Field(pattern =re.compile(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,15}$'))
     confirm_password : str
 
-
-# # -------------------------------------PASSWORD RESET
-
-# class ForgotPasswordRequest(BaseModel):
-#     email: EmailStr
-
-# class ResetPasswordVerify(BaseModel):
-#     email: EmailStr
-#     otp: str
-#     new_password: str = Field(pattern=r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,15}$')
-
-# # ----------------------login through fb or google
-
-# class SocialLoginRequest(BaseModel):
-#     provider: str # google k facebook 
-#     token: str    # External OAuth authorization token string
-#     email: EmailStr
-#     firstname: str
-#     lastname: str
-
-# # for Manual verification trigger email 
-# class VerificationResendRequest(BaseModel):
-#     email: EmailStr

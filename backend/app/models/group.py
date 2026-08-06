@@ -8,3 +8,5 @@ class Group(Base):
     group_name = Column(String,index=True)
     group_description=Column(String)
     groupmember= Column(JSON)
+    admins = Column(JSON, default=list)
+    
