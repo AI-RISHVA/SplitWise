@@ -84,7 +84,7 @@ def verify_token(token: str = Depends(oauth2_scheme), db: Session = Depends(get_
 
 
 @router.post("/refresh")
-def refresh_access_token(data: RefreshTokenInput):
+def refresh_access_token(data: RefreshTokenInput,db: Session = Depends(get_session)):
     refresh_token = data.refresh_token
     try:
         #  Refresh token ne decode aurand verify 

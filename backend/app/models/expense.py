@@ -2,7 +2,7 @@
 from datetime import datetime,timezone
 
 from app.db.data import Base
-from sqlalchemy import Column,Integer,String,JSON,DateTime,ForeignKey,Float
+from sqlalchemy import Column,Integer,String,JSON,DateTime,ForeignKey,Float,Boolean
 
 
 class Expense(Base):
@@ -18,3 +18,4 @@ class Expense(Base):
     split_details= Column(JSON, nullable=True, default=None)
     description =Column(String,default=None)
     date = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    is_deleted = Column(Boolean, default=False, nullable=False) 
