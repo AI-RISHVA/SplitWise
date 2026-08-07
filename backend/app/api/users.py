@@ -94,19 +94,19 @@ async def user_register(signin:UserIn,db: Session = Depends(get_session)):
 def login(form_data :OAuth2PasswordRequestForm=Depends(),db: Session = Depends(get_session)
 ):
     # user = db.execute(select(User).where(User.username == form_data.username)).scalars().first()
-    user = db.execute(select(User).where(User.username == form_data.username, User.is_active == True)).scalars().first()
+    db_user = db.execute(select(User).where(User.username == form_data.username, User.is_active == True)).scalars().first()
  
-    if not user or not verifypass(form_data.password,user.password):
+    if not db_user or not verifypass(form_data.password,db_user.password):
         raise HTTPException(
             status_code=400,
             detail="invalid username & password"
         )
 
     # 1. Access Token (Short-lived)
-    access_token = create_token({"sub": form_data.username}, is_refresh=False)
+    access_token = create_token({"sub":  str(db_user.id)}, is_refresh=False)
     
     # 2. Refresh Token (Long-lived)
-    refresh_token = create_token({"sub": form_data.username}, is_refresh=True)
+    refresh_token = create_token({"sub":  str(db_user.id)}, is_refresh=True)
 
 
 
@@ -141,15 +141,6 @@ def update_profile(profile_data: ProfileUpdate, db: Session = Depends(get_sessio
             raise HTTPException(status_code=400, detail="This email is already registered ")
         db_user.email = profile_data.email
 
-    username_changed = False
-    if profile_data.username:
-            existing_username = db.execute(select(User).where(User.username == profile_data.username, User.username != username)).scalars().first()
-    
-            if existing_username:
-                raise HTTPException(status_code=400, detail="This username is already registered ")
-            db_user.username = profile_data.username
-            username_changed = True
-
     if profile_data.mobile_no:
         existing_mobile = db.execute(
             select(User).where(User.mobile_no == profile_data.mobile_no, User.username != username)
@@ -163,20 +154,6 @@ def update_profile(profile_data: ProfileUpdate, db: Session = Depends(get_sessio
         db.add(db_user)
         db.commit()
         db.refresh(db_user)
-
-        response_data = {
-            "status": "Success", 
-            "msg": "Profile details updated successfully", 
-            "updated_data": profile_data
-        }
-        
-        # AGAR USERNAME BADLA HAI, TOH NAYA TOKEN BANA KAR DENGE
-        if username_changed:
-            new_token = create_token({"sub": db_user.username}, is_refresh=False)
-            response_data["new_access_token"] = new_token
-            response_data["msg"] = "Profile and Username updated. "
-            
-        return response_data
 
     except IntegrityError:
         db.rollback()

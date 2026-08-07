@@ -154,7 +154,7 @@ def remove_friend(
         return {'error': f"User '{data.friend_username}' is not in your friend list."}
 
     net = get_pairwise_balance(db, username, data.friend_username)
-    if abs(net) > 0.01:      # balance settle nahi hai to remove nahi hone denge
+    if abs(net) > 0.01:      # balance settle nathi to remove nai thava dey
         raise HTTPException(
             status_code=400,
             detail=f"Cannot remove {data.friend_username} — balance is not settled ({net}). Settle up first."
