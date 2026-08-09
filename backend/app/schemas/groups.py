@@ -14,7 +14,5 @@ class UpdateGroup(BaseModel):
     group_name: str  
     new_group_name: Optional[str] = None  
     group_description: Optional[str] = None  
-    groupmember: Optional[List[str]] = None  
     
-    old_member: Optional[str] = None  
-    new_member: Optional[str] = None  
+    

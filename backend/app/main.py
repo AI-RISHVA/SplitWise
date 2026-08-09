@@ -10,7 +10,8 @@ from app.db.data import Base,engine
 
 from app.db import data
 from contextlib import asynccontextmanager
-
+from dotenv import load_dotenv
+load_dotenv()
 
 @asynccontextmanager 
 async def lifespan_manager(app:FastAPI): #lifespan ma lakhelo code only 1 time run thay avo hoy, jya e server start thy k stop thy 

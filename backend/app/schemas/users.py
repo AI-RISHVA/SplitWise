@@ -66,13 +66,13 @@ class UserOut(BaseModel):
 
 
 class ProfileUpdate(BaseModel):
-    username: Optional[str] = None
     firstname: Optional[str] = None
     lastname: Optional[str] = None
     gender: Optional[Literal['male', 'female', 'other']] = None
     email: Optional[EmailStr] = None
     mobile_no: Optional[str] = Field(default=None, min_length=10, max_length=10, pattern=r'^\d{10}$')
-    
+    email_otp: Optional[str] = Field(default=None, min_length=6, max_length=6)
+    mobile_otp: Optional[str] = Field(default=None, min_length=6, max_length=6)
 
 
 
@@ -80,4 +80,12 @@ class PasswordChange(BaseModel):
     old_password: str
     new_password: str = Field(pattern =re.compile(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,15}$'))
     confirm_password : str
+    otp: str = Field(min_length=6, max_length=6) 
 
+class ProfileOTPRequest(BaseModel):
+    purpose: Literal["update_email", "update_phone"]
+    target: str          # naya email ya naya 10-digit mobile number
+
+
+class PasswordOTPRequest(BaseModel):
+    channel: Literal["email", "phone"]   # kaha OTP bhejna hai - registered email ya phone

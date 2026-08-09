@@ -62,7 +62,13 @@ def send_friend_request(
 ).scalars().first()
 
     if existing_relation:
-        return {'error': f" relationship or request already exists with status: '{existing_relation.status}'."}
+        if existing_relation.status == FriendStatus.REJECTED:
+            db.delete(existing_relation)   # purani rejected request hata do, naya bhejne do
+            db.flush()
+        else:
+            return {'error': f" relationship or request already exists with status: '{existing_relation.status}'."}
+
+
 
     db_friend = Friend(
         sender_username=username,
@@ -97,7 +103,9 @@ def respond_friend_request(
     elif data.action == FriendStatus.REJECTED:
         db_request.status = FriendStatus.REJECTED
         msg = f"Friend request from '{data.friend_username}' has been rejected"
-    
+    else:
+        raise HTTPException(status_code=400, detail="Action must be either 'accepted' or 'rejected'.")
+
     db.add(db_request)
     db.commit()
     return {"status": "Success", "msg": msg}

@@ -25,20 +25,43 @@ router = APIRouter()
 @router.post("/add_group/", status_code= 201)
 def add_group(groupdata : GroupInfo , db: Session = Depends(get_session),username: str = Depends(verify_token)):  
 
+    existing_group = db.execute(select(Group).where(Group.group_name == groupdata.group_name)).scalars().first()
+    if existing_group:
+        raise HTTPException(status_code=400, detail=f"A group named '{groupdata.group_name}' already exists. Choose a different name.")
+    
     invalid_users = []
+    not_friends = []
     for member_username in groupdata.groupmember:
-        user_check = db.execute(select(User).where(User.username == member_username)).scalars().first()
+        if member_username == username:
+            continue    # khud ko friend check se skip karo
 
+        user_check = db.execute(select(User).where(User.username == member_username)).scalars().first()
         if not user_check:
             invalid_users.append(member_username)
+            continue
+
+        is_friend = db.execute(select(Friend).where(
+            (
+                ((Friend.sender_username == username) & (Friend.receiver_username == member_username)) |
+                ((Friend.sender_username == member_username) & (Friend.receiver_username == username))
+            ) &
+            (Friend.status == FriendStatus.ACCEPTED)
+        )).scalars().first()
+
+        if not is_friend:
+            not_friends.append(member_username)
 
     if invalid_users:
         raise HTTPException(
             status_code=400, 
             detail=f"{invalid_users} do not exist on this app. Register first."
         )
-    
-    
+    if not_friends:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{not_friends} is/are not your accepted friend(s). Add as friend first."
+        )
+        
     unique_members = list(set(groupdata.groupmember + [username]))  #[username ] atle che k je group banave che eb user group ma add already hoy
     
     db_group = Group(
@@ -224,7 +247,13 @@ def leave_group(group_name: str,member: str = None, db: Session = Depends(get_se
     
 
 #   JO ADMIN HOY TO ADMIN LIST MATHI REMOVE THASE
-    if group.admins and target in group.admins:
+    if target == username:
+        # agar leave karne wala AKELA admin hai aur group me aur bhi members hai
+        if group.admins and target in group.admins and len(group.admins) == 1 and len(group.groupmember) > 1:
+            raise HTTPException(
+                status_code=400,
+                detail="You are the only admin. Please make another member an admin before leaving, or delete the group."
+            )
         group.admins.remove(target)
 
         
