@@ -247,9 +247,8 @@ def leave_group(group_name: str,member: str = None, db: Session = Depends(get_se
     
 
 #   JO ADMIN HOY TO ADMIN LIST MATHI REMOVE THASE
-    if target == username:
-        # agar leave karne wala AKELA admin hai aur group me aur bhi members hai
-        if group.admins and target in group.admins and len(group.admins) == 1 and len(group.groupmember) > 1:
+    if group.admins and target in group.admins:
+        if target == username and len(group.admins) == 1 and len(group.groupmember) > 1:
             raise HTTPException(
                 status_code=400,
                 detail="You are the only admin. Please make another member an admin before leaving, or delete the group."
