@@ -205,7 +205,7 @@ def update_profile(profile_data: ProfileUpdate, db: Session = Depends(get_sessio
 
         if not profile_data.email_otp:
             raise HTTPException(status_code=400, detail="OTP is required to update email.")
-
+            
         storage_key = f"update_email:{profile_data.email}"
         is_valid, message = verify_otp(storage_key, profile_data.email_otp)
         if not is_valid:
@@ -221,7 +221,7 @@ def update_profile(profile_data: ProfileUpdate, db: Session = Depends(get_sessio
             raise HTTPException(status_code=400, detail="This mobile number is already registered with another user.")
 
         if not profile_data.mobile_otp:
-            raise HTTPException(status_code=400, detail="OTP is required to update mobile number.")
+            raise HTTPException(status_code=400, detail="OTP is required to update mobile number. Call /send_profile_otp/ first.")
 
         storage_key = f"update_phone:{profile_data.mobile_no}"
         is_valid, message = verify_otp(storage_key, profile_data.mobile_otp)
