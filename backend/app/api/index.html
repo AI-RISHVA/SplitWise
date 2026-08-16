@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+  <div id="g_id_onload"
+       data-client_id="289111991779-f031bjp7vc281t4ogvp3a2keskiv73rp.apps.googleusercontent.com"
+       data-callback="handleToken">
+  </div>
+  <div class="g_id_signin"></div>
+
+  <script>
+    function handleToken(response) {
+      console.log("ID TOKEN:", response.credential);
+      // Ye token copy karo aur backend ko bhejo
+      document.body.innerText = response.credential;
+    }
+  </script>
+</body>
+</html>
