@@ -15,14 +15,16 @@ from app.models.token_blacklist import BlacklistedToken
 router = APIRouter()
 
 # 1 congiguration
-SECRET_KEY = "rishvasecret"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 58
-
+import os
+from dotenv import load_dotenv
+load_dotenv()
+SECRET_KEY = os.getenv("SECRET_KEY")
+ALGORITHM = os.getenv("ALGORITHM")
+ACCESS_TOKEN_EXPIRE_MINUTES = int( os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES",30))
 
 # 2.PASSWORD HAHING SETUP
 
-pwd_context = CryptContext(schemes =["bcrypt"],deprecated ="auto")
+pwd_context = CryptContext(schemes =["bcrypt"])
 
 # hash password
 def hash_password(password:str):
@@ -43,7 +45,13 @@ def create_token(data: dict , expires_delta: timedelta = None, is_refresh: bool 
         expire = datetime.now(timezone.utc) + expires_delta
     else:
         # 10 minute for access token, 7 days for refresh token
-        expire = datetime.now(timezone.utc) + (timedelta(days=7) if is_refresh else timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+        current_time = datetime.now(timezone.utc)
+        if is_refresh:
+            lifespan = timedelta(days=7)
+        else:
+            lifespan = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+
+        expire = current_time + lifespan
 
     to_encode.update({"exp": expire, "type": "refresh" if is_refresh else "access"})
     
@@ -87,7 +95,7 @@ def verify_token(token: str = Depends(oauth2_scheme), db: Session = Depends(get_
 def refresh_access_token(data: RefreshTokenInput,db: Session = Depends(get_session)):
     refresh_token = data.refresh_token
     try:
-        #  Refresh token ne decode aurand verify 
+        #  Refresh token ne decode and verify 
         payload = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
         token_type: str = payload.get("type")
