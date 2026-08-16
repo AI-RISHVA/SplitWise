@@ -4,7 +4,7 @@ from sqlalchemy import select
 from app.schemas.groups import GroupInfo , UpdateGroup
 from app.db.data import get_session
 from app.api.settlement import get_group_balances
-
+from app.models.friend import Friend, FriendStatus
 # table import
 from app.models.group import Group
 from app.models.user import User
@@ -25,21 +25,45 @@ router = APIRouter()
 @router.post("/add_group/", status_code= 201)
 def add_group(groupdata : GroupInfo , db: Session = Depends(get_session),username: str = Depends(verify_token)):  
 
+    existing_group = db.execute(select(Group).where(Group.group_name == groupdata.group_name)).scalars().first()
+    if existing_group:
+        raise HTTPException(status_code=400, detail=f"A group named '{groupdata.group_name}' already exists. Choose a different name.")
+    
     invalid_users = []
+    not_friends = []
     for member_username in groupdata.groupmember:
-        user_check = db.execute(select(User).where(User.username == member_username)).scalars().first()
+        if member_username == username:
+            continue    # khud ko friend check se skip karo
 
+        user_check = db.execute(select(User).where(User.username == member_username)).scalars().first()
         if not user_check:
             invalid_users.append(member_username)
+            continue
+
+        is_friend = db.execute(select(Friend).where(
+            (
+                ((Friend.sender_username == username) & (Friend.receiver_username == member_username)) |
+                ((Friend.sender_username == member_username) & (Friend.receiver_username == username))
+            ) &
+            (Friend.status == FriendStatus.ACCEPTED)
+        )).scalars().first()
+
+        if not is_friend:
+            not_friends.append(member_username)
 
     if invalid_users:
         raise HTTPException(
             status_code=400, 
             detail=f"{invalid_users} do not exist on this app. Register first."
         )
-
-    unique_members = list(set(groupdata.groupmember))
-
+    if not_friends:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{not_friends} is/are not your accepted friend(s). Add as friend first."
+        )
+        
+    unique_members = list(set(groupdata.groupmember + [username]))  #[username ] atle che k je group banave che eb user group ma add already hoy
+    
     db_group = Group(
         group_name =groupdata.group_name,
         group_description=groupdata.group_description,
@@ -54,8 +78,15 @@ def add_group(groupdata : GroupInfo , db: Session = Depends(get_session),usernam
     
     db.refresh(db_group)  #data ne refresh kare jethi koi id bani hoy to db ma store thay
   
-    return {'status':'adding your data succesfully', 'data' :groupdata,'created_by': username}
-
+    return {
+        'status': 'adding your data succesfully',
+        'data': {
+            'group_name': db_group.group_name,
+            'group_description': db_group.group_description,
+            'groupmember': db_group.groupmember
+        },
+        'created_by': username
+    }
 
 # ---------------------------------------------------------------------------
 
@@ -74,38 +105,8 @@ def update_group(
     if username not in db_group.groupmember:
         raise HTTPException(
             status_code=403, 
-            detail=f"Access Denied: You ('{username}') are not a member of this group, so you cannot edit it."
+            detail=f"You ('{username}') are not a member of this group, so you cannot edit it."
         )
-
-    if groupdata.old_member and groupdata.new_member:
-        if groupdata.old_member not in db_group.groupmember:
-            return {'error': f"Member '{groupdata.old_member}' is not in this group."}
-
-        user_check = db.execute(select(User).where(User.username == groupdata.new_member)).scalars().first()
-        if not user_check:
-            raise HTTPException(
-                status_code=400, 
-                detail=f"{groupdata.new_member} do not exist on this app. Register first."
-            )
-
-        updated_list = list(db_group.groupmember)
-        index_to_replace = updated_list.index(groupdata.old_member)
-        updated_list[index_to_replace] = groupdata.new_member
-        db_group.groupmember = updated_list
-
-    elif groupdata.groupmember:
-        invalid_users = []
-        for member_username in groupdata.groupmember:
-            user_check = db.execute(select(User).where(User.username == member_username)).scalars().first()
-            if not user_check:
-                invalid_users.append(member_username)
-
-        if invalid_users:
-            raise HTTPException(
-                status_code=400, 
-                detail=f"{invalid_users} do not exist on this app. Register first."
-            )
-        db_group.groupmember = list(set(groupdata.groupmember))
 
     if groupdata.new_group_name:
         db_group.group_name = groupdata.new_group_name
@@ -133,12 +134,27 @@ def Add(group_name: str, member: list[str] = [],db: Session = Depends(get_sessio
         raise HTTPException(status_code=403, detail="You are not a member of this group.")
 
     updated_members = set(group.groupmember)
-    
+
+    not_friends = []
     for i in member:
         if i in group.groupmember:
             return{"msg": f" {i} is already in the group"}
         updated_members.add(i)
+        is_friend = db.execute(select(Friend).where(
+                    (
+                        ((Friend.sender_username == username) & (Friend.receiver_username == i)) |
+                        ((Friend.sender_username == i) & (Friend.receiver_username == username))
+                    ) &
+                    (Friend.status == FriendStatus.ACCEPTED))).scalars().first()
 
+        if not is_friend:
+            not_friends.append(i)
+            continue
+
+        updated_members.add(i)
+
+    if not_friends:
+        raise HTTPException(status_code=400,detail=f"{not_friends} is/are not your accepted friend(s). Add as friend first.")
     group.groupmember = list(updated_members)
 
     db.add(group)
@@ -146,39 +162,6 @@ def Add(group_name: str, member: list[str] = [],db: Session = Depends(get_sessio
 
     return {"msg":f"Successfully {member} added in {group_name} "}
  
-
-
-# ---------------------------------------------------------------------------
-
-
-@router.put("/remove_members/")
-def Remove(group_name: str, member: list[str] = [] ,db: Session = Depends(get_session),username: str = Depends(verify_token)):
-    statement = select(Group).where(Group.group_name == group_name)
-    group = db.execute(statement).scalars().first()
-    if not group:
-            return {'error':"not found the group name"}
-    
-    if username not in group.groupmember:          
-        raise HTTPException(status_code=403, detail=" You are not a member of this group.")
-
-    current_members = set(group.groupmember)
-    balances = get_group_balances(db, group_name)
-
-    for j in member:
-        if j not in current_members:
-            return {"error": f"Member {j} is not in group."}
-        if abs(balances.get(j, 0.0)) > 0.01:      
-            raise HTTPException(
-                status_code=400,
-                detail=f"Cannot remove '{j}' — their balance is not settled (₹{balances.get(j)})."
-            )
-
-    group.groupmember = list(set(group.groupmember) - set(member))
-
-    db.add(group)
-    db.commit()
-    db.refresh(group)
-    return {"msg":f"{member} remove in {group_name} "}
    
 
 # ----------------------------------------------------------------------
@@ -193,14 +176,14 @@ def get_group(db: Session = Depends(get_session),username: str = Depends(verify_
         if username not in data.groupmember: 
             continue
 
-        balances = get_group_balances(db, data.group_name)   # 👈 NEW
+        balances = get_group_balances(db, data.group_name)  
 
         result[data.group_name] = {
             "group_name": data.group_name,
             "group_description": data.group_description,
             "groupmember":(list(data.groupmember)),
             "member": len(data.groupmember),
-            "your_balance": balances.get(username, 0.0)      # 👈 NEW
+            "your_balance": balances.get(username, 0.0)      
         }
     return result
 
@@ -218,7 +201,7 @@ def group_del(group_name:str,db: Session = Depends(get_session),username: str = 
             raise HTTPException(status_code=403, detail=" Only group admins can delete this group.")
 
     balances = get_group_balances(db, group_name)
-    unsettled = {m: b for m, b in balances.items() if abs(b) > 0.01}   # 👈 NEW
+    unsettled = {m: b for m, b in balances.items() if abs(b) > 0.01}   #abs -use karu che km k a 
     if unsettled:
         raise HTTPException(
             status_code=400,
@@ -234,33 +217,52 @@ def group_del(group_name:str,db: Session = Depends(get_session),username: str = 
 # ----------------------------------------------------------
 
 @router.post("/leave_group/")
-def leave_group(group_name: str, db: Session = Depends(get_session), username: str = Depends(verify_token)):
+def leave_group(group_name: str,member: str = None, db: Session = Depends(get_session), username: str = Depends(verify_token)):
     statement = select(Group).where(Group.group_name == group_name)
     group = db.execute(statement).scalars().first()
     if not group:
         return {'error': "not found the group name"}
 
-    if username not in group.groupmember:
-        raise HTTPException(status_code=400, detail="You are not a member of this group.")
+    if member:
+        target = member
+    else:
+        target = username
+
+    if target not in group.groupmember:
+        raise HTTPException(status_code=400, detail=f"User '{target}' is not a member of this group.")
+
+    if member and member != username:
+        if not group.admins or username not in group.admins:
+            raise HTTPException(status_code=403, detail="Only admins can remove other members.")
+
 
     balances = get_group_balances(db, group_name)
-    if abs(balances.get(username, 0.0)) > 0.01:      # 👈 NEW
+    target_balance = balances.get(target, 0.0)
+    if abs(target_balance) > 0.01:     
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot leave — your balance in this group is not settled (₹{balances.get(username)}). Settle up first."
-        )
+            detail=f"Cannot leave — balance in this group is not settled (₹{target_balance}). Settle up first.")
 #   MEMBER LIST MATHI REMOVE
-    if username in group.groupmember:
-        group.groupmember.remove(username)
+    group.groupmember.remove(target)
+    
 
 #   JO ADMIN HOY TO ADMIN LIST MATHI REMOVE THASE
-    if group.admins and username in group.admins:
-        group.admins.remove(username)
+    if group.admins and target in group.admins:
+        if target == username and len(group.admins) == 1 and len(group.groupmember) > 1:
+            raise HTTPException(
+                status_code=400,
+                detail="You are the only admin. Please make another member an admin before leaving, or delete the group."
+            )
+        group.admins.remove(target)
 
+        
     db.add(group)
     db.commit()
     db.refresh(group)
-    return {"msg": f"You have successfully left '{group_name}'"}
+    if target == username:
+        return {"msg": f"You have successfully left '{group_name}'"}
+    else:
+        return {"msg": f"Successfully removed '{target}' from '{group_name}'"}
 
 # ---------------------------------------------------------------
 
@@ -294,7 +296,7 @@ def group_details(group_name: str, db: Session = Depends(get_session), username:
         }
         expenses_list.append(exp_details) 
         
-
+    
     return {
         "group_name": group.group_name,
         "group_description": group.group_description,

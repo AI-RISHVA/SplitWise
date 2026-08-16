@@ -11,7 +11,7 @@ class User(Base):
     lastname = Column(String,index=True)
     username = Column(String,index=True,unique=True)
     gender = Column(String, default=GenderEnum.Female, nullable=False) 
-    mobile_no =Column(String(10))    
+    mobile_no =Column(String(10), unique=True)    
     email =Column(String,unique=True, nullable=False, index=True)
     password =Column(String, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)

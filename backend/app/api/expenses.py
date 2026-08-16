@@ -115,6 +115,7 @@ def add_expense(expd: SharedExpense, db: Session = Depends(get_session), usernam
     return {
         'status': 'adding your data succesfully',
         'data': {
+            'id': db_expense.id,
             'group_name': db_expense.group_name,
             'amount': db_expense.amount,
             'shared_by': db_expense.shared_by,

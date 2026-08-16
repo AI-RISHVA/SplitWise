@@ -1,7 +1,7 @@
 # ######    EMAIL UPDATE BAKI THROUGH OTP, FORGET PASSWORD BAKI , PHONE NUMBER UPDATE THROUGH OTP
 
 
-from fastapi import APIRouter ,Depends, HTTPException,status
+from fastapi import APIRouter ,Depends, HTTPException,status,Body
 from app.db.data import get_session
 from app.schemas.users import UserOut,UserIn , ProfileUpdate, PasswordChange
 from sqlalchemy import select
@@ -23,7 +23,10 @@ from app.models.token_blacklist import BlacklistedToken
 from fastapi.security import OAuth2PasswordRequestForm
 
 
-
+from app.schemas.users import UserOut, UserIn, ProfileUpdate, PasswordChange, ProfileOTPRequest, PasswordOTPRequest
+from app.api.otp_utils import send_otp, verify_otp
+from app.api.otp import send_email_otp, send_sms_otp
+from app.models.friend import Friend 
 
 router = APIRouter()
  ### app.inculde_router(user_routes) #a line main file ma lakhvi jethi a file na endpoints tya jova malse
@@ -88,25 +91,83 @@ async def user_register(signin:UserIn,db: Session = Depends(get_session)):
         )
 
 
+
+# ..........................................................................
+
+@router.post("/send_profile_otp/")
+def send_profile_otp(request_data: ProfileOTPRequest, db: Session = Depends(get_session), username: str = Depends(verify_token)):
+
+    if request_data.purpose == "update_email":
+        existing_user = db.execute(select(User).where(User.email == request_data.target)).scalars().first()
+        if existing_user:
+            raise HTTPException(status_code=400, detail="This email is already registered with another user.")
+    else:  # update_phone
+        existing_user = db.execute(select(User).where(User.mobile_no == request_data.target)).scalars().first()
+        if existing_user:
+            raise HTTPException(status_code=400, detail="This mobile number is already registered with another user.")
+
+    storage_key = f"{request_data.purpose}:{request_data.target}"
+    otp_code, wait_seconds = send_otp(storage_key)
+
+    if otp_code is None:
+        raise HTTPException(status_code=429, detail=f"Please wait {wait_seconds} seconds before requesting a new OTP.")
+
+    if request_data.purpose == "update_email":
+        send_email_otp(request_data.target, otp_code, request_data.purpose)
+    else:
+        send_sms_otp(request_data.target, otp_code, request_data.purpose)
+
+    return {"status": "Success", "msg": f"OTP sent to {request_data.target}. Valid for 5 minutes."}
+
+
+# ..........................................................................
+
+@router.post("/send_password_otp/")
+def send_password_otp(request_data: PasswordOTPRequest, db: Session = Depends(get_session), username: str = Depends(verify_token)):
+    db_user = db.execute(select(User).where(User.username == username)).scalars().first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if request_data.channel == "email":
+        target = db_user.email
+        purpose = "change_password_email"
+    else:
+        target = db_user.mobile_no
+        purpose = "change_password_phone"
+
+    storage_key = f"{purpose}:{target}"
+    otp_code, wait_seconds = send_otp(storage_key)
+
+    if otp_code is None:
+        raise HTTPException(status_code=429, detail=f"Please wait {wait_seconds} seconds before requesting a new OTP.")
+
+    if request_data.channel == "email":
+        send_email_otp(target, otp_code, purpose)
+    else:
+        send_sms_otp(target, otp_code, purpose)
+
+    return {"status": "Success", "msg": f"OTP sent to your registered {request_data.channel}. Valid for 5 minutes."}
+
+
 # ..........................................................................
 
 @router.post("/login")
 def login(form_data :OAuth2PasswordRequestForm=Depends(),db: Session = Depends(get_session)
 ):
     # user = db.execute(select(User).where(User.username == form_data.username)).scalars().first()
-    user = db.execute(select(User).where(User.username == form_data.username, User.is_active == True)).scalars().first()
+    db_user = db.execute(select(User).where(User.username == form_data.username, User.is_active == True)).scalars().first()
  
-    if not user or not verifypass(form_data.password,user.password):
+    if not db_user or not verifypass(form_data.password,db_user.password):
         raise HTTPException(
             status_code=400,
             detail="invalid username & password"
         )
 
     # 1. Access Token (Short-lived)
-    access_token = create_token({"sub": form_data.username}, is_refresh=False)
+    access_token = create_token({"sub":  str(db_user.username)}, is_refresh=False)
     
     # 2. Refresh Token (Long-lived)
-    refresh_token = create_token({"sub": form_data.username}, is_refresh=True)
+    refresh_token = create_token({"sub":  str(db_user.username)}, is_refresh=True)
 
 
 
@@ -139,16 +200,16 @@ def update_profile(profile_data: ProfileUpdate, db: Session = Depends(get_sessio
 
         if existing_email:
             raise HTTPException(status_code=400, detail="This email is already registered ")
-        db_user.email = profile_data.email
 
-    username_changed = False
-    if profile_data.username:
-            existing_username = db.execute(select(User).where(User.username == profile_data.username, User.username != username)).scalars().first()
-    
-            if existing_username:
-                raise HTTPException(status_code=400, detail="This username is already registered ")
-            db_user.username = profile_data.username
-            username_changed = True
+        if not profile_data.email_otp:
+            raise HTTPException(status_code=400, detail="OTP is required to update email. Call /send_profile_otp/ first.")
+
+        storage_key = f"update_email:{profile_data.email}"
+        is_valid, message = verify_otp(storage_key, profile_data.email_otp)
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=message)
+
+        db_user.email = profile_data.email
 
     if profile_data.mobile_no:
         existing_mobile = db.execute(
@@ -156,6 +217,15 @@ def update_profile(profile_data: ProfileUpdate, db: Session = Depends(get_sessio
         ).scalars().first()
         if existing_mobile:
             raise HTTPException(status_code=400, detail="This mobile number is already registered with another user.")
+
+        if not profile_data.mobile_otp:
+            raise HTTPException(status_code=400, detail="OTP is required to update mobile number. Call /send_profile_otp/ first.")
+
+        storage_key = f"update_phone:{profile_data.mobile_no}"
+        is_valid, message = verify_otp(storage_key, profile_data.mobile_otp)
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=message)
+
         db_user.mobile_no = profile_data.mobile_no
 
 
@@ -164,23 +234,21 @@ def update_profile(profile_data: ProfileUpdate, db: Session = Depends(get_sessio
         db.commit()
         db.refresh(db_user)
 
-        response_data = {
-            "status": "Success", 
-            "msg": "Profile details updated successfully", 
-            "updated_data": profile_data
-        }
-        
-        # AGAR USERNAME BADLA HAI, TOH NAYA TOKEN BANA KAR DENGE
-        if username_changed:
-            new_token = create_token({"sub": db_user.username}, is_refresh=False)
-            response_data["new_access_token"] = new_token
-            response_data["msg"] = "Profile and Username updated. "
-            
-        return response_data
-
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=400, detail="This email is already registered with another user.")
+    return {
+        "status": "Success",
+        "msg": "Profile updated successfully.",
+        "data": {
+            "username": db_user.username,
+            "firstname": db_user.firstname,
+            "lastname": db_user.lastname,
+            "gender": db_user.gender,
+            "email": db_user.email,
+            "mobile_no": db_user.mobile_no,
+        }
+    }
 
 # ...................................................................
 
@@ -198,8 +266,20 @@ def change_password(passdata: PasswordChange, db: Session = Depends(get_session)
 
     if not passdata.new_password == passdata.confirm_password:
         raise HTTPException(status_code=400, detail="new password entered is not match with confirm password.")
-    
-        
+
+    email_key = f"change_password_email:{db_user.email}"
+    phone_key = f"change_password_phone:{db_user.mobile_no}"
+
+    is_valid_email, _ = verify_otp(email_key, passdata.otp)
+    if not is_valid_email:
+        is_valid_phone, message = verify_otp(phone_key, passdata.otp)
+        if not is_valid_phone:
+            raise HTTPException(status_code=400, detail="Invalid or expired OTP. Call /send_password_otp/ first.")
+
+
+
+
+       
     # Naya password hash karke save karo
     db_user.password = hash_password(passdata.new_password)
     db.add(db_user)
@@ -217,13 +297,14 @@ def get_user_profile(db: Session = Depends(get_session), username: str = Depends
 # ...................................................................
 @router.post("/logout/")
 def logout(
+    refresh_token: str = Body(...),
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_session),
     username: str = Depends(verify_token)
 ):
     # e token blacklist table ma nakhi didhu have e fari use no thy atle
-    db_token = BlacklistedToken(token=token)
-    db.add(db_token)
+    db.add(BlacklistedToken(token=token))
+    db.add(BlacklistedToken(token=refresh_token))
     db.commit()
     return {"status": "Success", "msg": f"Session closed. User '{username}' logged out successfully."}
 # ..........................................................................
@@ -250,6 +331,15 @@ def delete_user_account(db: Session = Depends(get_session),username: str = Depen
             
             i.groupmember = updated_members
             db.add(i) 
+
+    friend_records = db.execute(
+        select(Friend).where(
+            (Friend.sender_username == username) | (Friend.receiver_username == username)
+        )
+    ).scalars().all()
+    for f in friend_records:
+        db.delete(f)
+
 
     db.delete(db_user) #a perment delte mate che
 
