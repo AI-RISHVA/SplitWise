@@ -44,7 +44,7 @@ async def google_callback(request:Request,db: Session = Depends(get_session)):
         username = base_username
         while db.execute(select(User).where(User.username == username)).scalars().first():
             username = base_username + str(random.randint(100, 999))
-
+        
         name_parts = google_name.split(" ", 1)
         firstname = name_parts[0] if name_parts else "Google"
         lastname = name_parts[1] if len(name_parts) > 1 else "User"
@@ -61,8 +61,9 @@ async def google_callback(request:Request,db: Session = Depends(get_session)):
             google_id=google_sub,
         )
         db.add(db_user)
-        db.commit()
-        db.refresh(db_user)
+        await db.commit()
+        await db.refresh(db_user)
+        
 
     if not db_user.is_active:
         raise HTTPException(status_code=403, detail="This account is deactivated.")

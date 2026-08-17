@@ -81,6 +81,7 @@ def verify_token(token: str = Depends(oauth2_scheme), db: Session = Depends(get_
                 detail="Invalid token"
             )
         return username
+    
     except jwt.JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, 
@@ -94,6 +95,14 @@ def verify_token(token: str = Depends(oauth2_scheme), db: Session = Depends(get_
 @router.post("/refresh")
 def refresh_access_token(data: RefreshTokenInput,db: Session = Depends(get_session)):
     refresh_token = data.refresh_token
+
+    blacklisted = db.execute(
+        select(BlacklistedToken).where(BlacklistedToken.token == refresh_token)
+    ).scalars().first()
+    
+    if blacklisted:
+        raise HTTPException(status_code=401, detail="Refresh token has been logged out. Please login again.")
+
     try:
         #  Refresh token ne decode and verify 
         payload = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])

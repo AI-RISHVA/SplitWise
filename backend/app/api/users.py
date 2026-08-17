@@ -40,15 +40,15 @@ router = APIRouter()
 @router.post("/register",response_model=UserOut)
 async def user_register(signin:UserIn,db: Session = Depends(get_session)):
 
-    existing_user = db.execute(select(User).where(User.username == signin.username)).scalars().first()
-    existing_email = db.execute(select(User).where(User.email == signin.email)).scalars().first()
-    existing_mobile_no = db.execute(select(User).where(User.mobile_no == signin.mobile_no)).scalars().first()
-    
-    
+    existing_user = await db.execute(select(User).where(User.username == signin.username)).scalars().first()
     if existing_user:
-        raise HTTPException(status_code=400, detail=f"Username is already registered")
+            raise HTTPException(status_code=400, detail=f"Username is already registered")
+    
+    existing_email = await db.execute(select(User).where(User.email == signin.email)).scalars().first()
     if existing_email:
-            raise HTTPException(status_code=400, detail=f"email is already registered")
+                raise HTTPException(status_code=400, detail=f"email is already registered")
+    
+    existing_mobile_no = await db.execute(select(User).where(User.mobile_no == signin.mobile_no)).scalars().first()    
     if existing_mobile_no:
             raise HTTPException(status_code=400, detail=f"mobile is already registered")
 
@@ -65,15 +65,15 @@ async def user_register(signin:UserIn,db: Session = Depends(get_session)):
         )
         db.add(db_user) 
         
-        db.commit() 
+        await db.commit() 
         
-        db.refresh(db_user)  #data ne refresh kare jethi koi id bani hoy to db ma store thay
+        await db.refresh(db_user)  #data ne refresh kare jethi koi id bani hoy to db ma store thay
     
         return db_user
 
     
     except IntegrityError as e:
-        db.rollback() # if koi error avse to db rollback kare(atle ke "undo" kare)
+        await db.rollback() # if koi error avse to db rollback kare(atle ke "undo" kare)
         error_msg = str(e.orig)
         
         if "user.username" in error_msg or "user.username" in error_msg:
